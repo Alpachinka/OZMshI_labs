@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Розпізнавання трьох образів — Brain.js + Web Workers</title>
+<style>
+body{font-family:system-ui,Arial,sans-serif;margin:0;background:#f4f5f7;color:#222;font-size:14px}
+header{background:#2b4c7e;color:#fff;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
+header h1{margin:0;font-size:17px} #tm{font-size:22px;font-weight:bold;margin-left:8px}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;padding:12px;max-width:1300px;margin:auto}
+section{background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 3px #0002} .wide{grid-column:1/-1}
+h2{font-size:15px;margin:0 0 8px} .row{margin:6px 0} button,select,input{font-size:13px;padding:5px 8px;margin:2px 3px 2px 0}
+input[type=number]{width:80px} progress{width:100%;height:16px} small{color:#667}
+canvas{max-width:100%;border:1px solid #ccd;background:#fff;image-rendering:pixelated}
+.ph{border:2px dashed #aab;border-radius:6px;min-height:110px;display:flex;align-items:center;justify-content:center;color:#889;text-align:center;padding:6px}
+#info{display:none;background:#eef3fb;border-radius:6px;padding:6px;font-size:12px;margin-top:6px}
+.bar{background:#e3e6ee;border-radius:4px;height:18px;margin:3px 0;position:relative}.bar>div{background:#3a7bd5;height:100%;border-radius:4px}.bar>span{position:absolute;left:6px;top:0;font-size:12px}
+table{border-collapse:collapse;font-size:12px;width:100%}td,th{border:1px solid #bbc;padding:2px 5px;text-align:right}th{background:#eef}
+#logbox{width:100%;height:160px;font:12px Consolas,monospace;box-sizing:border-box}
+</style></head><body>
+<header><h1>Розпізнавання образів (коло / квадрат / трикутник): Brain.js + Web Workers</h1>
+<div>⏱ <span id="opn">очікування</span>: <span id="tm">0.00 с</span></div></header>
+<main>
+
+<section><h2>1. Набір даних (Assets)</h2>
+ <div class="row"><label for="nPer">Зображень на кожен образ у групі:</label> <input type="number" id="nPer" value="100" min="10" max="1000"></div>
+ <div class="row">Групи для генерації:<br>
+  <label><input type="checkbox" class="gg" value="icons" checked> Іконки 32×32 (PNG)</label><br>
+  <label><input type="checkbox" class="gg" value="medium" checked> Середні 256×256 (JPG, якість 0.8)</label><br>
+  <label><input type="checkbox" class="gg" value="hq" checked> Якісні 4K 3840×2160 (JPG, якість 0.92)</label></div>
+ <div class="row"><label for="nW">Потоків (Web Workers):</label> <input type="number" id="nW" min="1" max="16"></div>
+ <button class="act" id="bGen">Згенерувати набір</button><button class="act" id="bDir">Завантажити папку…</button><input type="file" id="dir" webkitdirectory multiple hidden><button id="bZip">Зберегти набір (.zip)</button>
+ <div class="row"><b>Групи в Assets</b> (позначте, на яких вчити):<div id="groups"><small>Набір порожній. Згенеруйте його або завантажте папку.</small></div></div>
+ <progress id="pImg" value="0" max="100"></progress><div id="tImg"><small>Оброблено зображень: 0%</small></div>
+</section>
+
+<section><h2>2. Навчання нейромережі</h2>
+ <div class="row"><label for="ep">Кількість епох:</label> <input type="number" id="ep" value="100" min="1" max="5000"></div>
+ <div class="row"><label for="lr">Швидкість навчання:</label> <input type="number" id="lr" value="0.3" min="0.001" max="0.99" step="0.01"></div>
+ <button class="act" id="bTrain">Навчити мережу</button><button id="bStop" disabled>Зупинити</button>
+ <progress id="pEp" value="0" max="100"></progress><div id="tEp"><small>Епоха: 0 / 0</small></div>
+ <div class="row" id="res">Мережу ще не навчено.</div>
+</section>
+
+<section><h2>3. Розпізнавання</h2>
+ <div class="row"><label for="file">Файл зображення:</label><br><input type="file" id="file" accept="image/*"></div>
+ <button id="bGen1">Випадкова фігура</button><button id="bInfo">ℹ Інфо</button><button id="bRun" disabled>Розпізнати образ</button>
+ <div id="info"></div>
+ <div class="ph" id="phIn">Тут буде вхідне зображення</div><canvas id="cIn" width="256" height="256" style="display:none"></canvas>
+ <div class="row"><label for="fmt">Формат:</label> <select id="fmt"><option value="png">PNG</option><option value="jpg">JPG</option><option value="bmp">BMP</option></select><button id="bSave">Зберегти зображення</button></div>
+ <div id="answer" style="font-size:18px;font-weight:bold">—</div><div id="bars"></div>
+</section>
+
+<section class="wide"><h2>4. Експерименти та бенчмарки</h2>
+ <div class="row"><label for="eL">Епохи (через кому):</label> <input type="text" id="eL" value="10,30,100,200" style="width:150px">
+  <label for="lL">Швидкості навчання:</label> <input type="text" id="lL" value="0.05,0.2,0.5" style="width:130px">
+  <label for="rep">Повторів:</label> <input type="number" id="rep" value="3" min="1" max="10">
+  <button class="act" id="bExp">Серія: набір × швидкість × епохи</button></div>
+ <div class="row"><label for="wl">Потоки (через кому):</label> <input type="text" id="wl" style="width:110px">
+  <label for="nB">Зображень на образ:</label> <input type="number" id="nB" value="20" min="3">
+  <button class="act" id="bPar">Бенчмарк розпаралелення</button><button id="bCsv">Зберегти таблицю (CSV)</button></div>
+ <div id="exp"><small>Результати з'являться тут. Для серії експериментів позначте групи в розділі 1.</small></div>
+</section>
+
+<section class="wide"><h2>5. Лог операцій</h2>
+ <textarea id="logbox" readonly></textarea><button id="bLog">Зберегти лог (.txt)</button></section>
+</main>
+
+<!--BRAIN-->
+<script>
+const $ = id => document.getElementById(id);
+const CL = ['circle', 'square', 'triangle'], UA = { circle: 'коло', square: 'квадрат', triangle: 'трикутник' }, HID = 32;
+// Групи генерованих зображень: різні роздільність, формат і якість (як «якісні» та «іконки»)
+const GR = {
+  icons:  { n: 'Іконки 32×32 PNG',        w: 32,   h: 32,   t: 'image/png',  q: 1,    e: 'png', d: 'icons_32x32_png' },
+  medium: { n: 'Середні 256×256 JPG q0.8', w: 256,  h: 256,  t: 'image/jpeg', q: 0.8,  e: 'jpg', d: 'medium_256x256_jpg' },
+  hq:     { n: 'Якісні 4K JPG q0.92',      w: 3840, h: 2160, t: 'image/jpeg', q: 0.92, e: 'jpg', d: 'hq_4K_jpg' } };
+const lbl = k => GR[k] ? GR[k].n : k, dirName = k => GR[k] ? GR[k].d : k;
+const assets = {}, sel = new Set(); let trained = false, abort = false, cur = null, lastCSV = '';
+
+/* ================= Воркер 1: обробка зображень (пул воркерів) ================= */
+function featWorker() {
+  const S = 16, K = 64;
+  const wk = new OffscreenCanvas(K, K), wc = wk.getContext('2d', { willReadFrequently: true });
+  const t16 = new OffscreenCanvas(S, S), c16 = t16.getContext('2d', { willReadFrequently: true });
+  // зображення -> вектор із 256 ознак (обрізання за межами фігури + масштабування на сітку 16×16)
+  function features(src) {
+    wc.fillStyle = '#fff'; wc.fillRect(0, 0, K, K);
+    const k = Math.min(K / src.width, K / src.height), w = src.width * k, h = src.height * k;
+    wc.drawImage(src, (K - w) / 2, (K - h) / 2, w, h);
+    const d = wc.getImageData(0, 0, K, K).data; let x0 = K, x1 = -1, y0 = K, y1 = -1;
+    for (let y = 0; y < K; y++) for (let x = 0; x < K; x++) {
+      const i = (y * K + x) * 4;
+      if (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < 128) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    if (x1 < 0) { x0 = 0; y0 = 0; x1 = K - 1; y1 = K - 1; }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1, sc = (S - 2) / Math.max(bw, bh);
+    c16.fillStyle = '#fff'; c16.fillRect(0, 0, S, S);
+    c16.drawImage(wk, x0, y0, bw, bh, (S - bw * sc) / 2, (S - bh * sc) / 2, bw * sc, bh * sc);
+    const g = c16.getImageData(0, 0, S, S).data, f = [];
+    for (let i = 0; i < g.length; i += 4) f.push(1 - (0.299 * g[i] + 0.587 * g[i + 1] + 0.114 * g[i + 2]) / 255);
+    return f;
+  }
+  // малює випадкову фігуру потрібного розміру
+  function draw(cls, w, h) {
+    const c = new OffscreenCanvas(w, h), x = c.getContext('2d'), m = Math.min(w, h);
+    x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+    const r = m * (0.22 + Math.random() * 0.18), cx = w / 2 + (Math.random() - 0.5) * m * 0.15, cy = h / 2 + (Math.random() - 0.5) * m * 0.15, rot = Math.random() * 6.283;
+    x.fillStyle = '#000'; x.beginPath();
+    if (cls === 'circle') x.arc(cx, cy, r, 0, 6.283);
+    else { const n = cls === 'square' ? 4 : 3; for (let i = 0; i < n; i++) { const a = rot + i * 6.283 / n; i ? x.lineTo(cx + r * 1.15 * Math.cos(a), cy + r * 1.15 * Math.sin(a)) : x.moveTo(cx + r * 1.15 * Math.cos(a), cy + r * 1.15 * Math.sin(a)); } x.closePath(); }
+    x.fill(); return c;
+  }
+  onmessage = async e => {
+    const t = e.data, t0 = performance.now();
+    const blob = t.file || await draw(t.cls, t.w, t.h).convertToBlob({ type: t.type, quality: t.q });  // кодування (PNG/JPG)
+    const img = await createImageBitmap(blob);                                                       // декодування
+    const f = features(img), w = img.width, h = img.height; img.close();
+    postMessage({ f, w, h, blob: t.file ? null : blob, ms: performance.now() - t0 });
+  };
+}
+
+/* ================= Воркер 2: нейромережа Brain.js (навчання в окремому потоці) ================= */
+function mlWorker() {
+  const CL = ['circle', 'square', 'triangle']; let net = null, stop = false;
+  const ch = new MessageChannel(), yieldNow = () => new Promise(r => { ch.port1.onmessage = r; ch.port2.postMessage(0); });
+  function evalSet(set) {
+    const ok = [0, 0, 0], n = [0, 0, 0];
+    set.forEach(s => { const o = net.run(s.input); let b = 0; CL.forEach((c, i) => { if (o[c] > o[CL[b]]) b = i; }); const l = CL.indexOf(s.label); n[l]++; if (b === l) ok[l]++; });
+    return { acc: set.length ? ok.reduce((a, b) => a + b) / set.length : 0, per: ok.map((k, i) => n[i] ? k / n[i] : 0) };
+  }
+  onmessage = async e => {
+    const m = e.data;
+    if (m.cmd === 'stop') { stop = true; return; }
+    if (m.cmd === 'run') { postMessage({ id: m.id, type: 'result', out: net.run(m.input) }); return; }
+    stop = false; net = new brain.NeuralNetwork({ hiddenLayers: [m.hidden] });
+    let tt = 0, ep = 0;
+    for (ep = 1; ep <= m.epochs && !stop; ep++) {
+      const a = performance.now();
+      const err = net.train(m.data, { iterations: 1, errorThresh: 1e-9, learningRate: m.lr, log: false }).error;   // 1 ітерація = 1 епоха
+      tt += performance.now() - a;
+      const msg = { id: m.id, type: 'epoch', ep, err, ms: tt };
+      if (m.ck.includes(ep) || ep === m.epochs) {            // контрольні точки: точність на тестовій і навчальній вибірках
+        const te = evalSet(m.test), tr = evalSet(m.data.map(d => ({ input: d.input, label: Object.keys(d.output)[0] })));
+        Object.assign(msg, { c: 1, acc: te.acc, per: te.per, trAcc: tr.acc });
+      }
+      postMessage(msg); await yieldNow();
+    }
+    postMessage({ id: m.id, type: 'done', ms: tt, epochs: ep - 1 });
+  };
+}
+
+/* ================= Основний потік ================= */
+const blobURL = (...p) => URL.createObjectURL(new Blob(p, { type: 'text/javascript' }));
+const BRAIN = new TextDecoder().decode(Uint8Array.from(atob(BRAIN_B64), c => c.charCodeAt(0)));
+const FURL = blobURL('(' + featWorker + ')()'), ml = new Worker(blobURL(BRAIN, '\n;(' + mlWorker + ')()'));
+const cb = {}; let seq = 0;
+ml.onmessage = e => { const f = cb[e.data.id]; if (f) f(e.data); };
+ml.onerror = e => log('ПОМИЛКА воркера нейромережі: ' + e.message);
+const mlCall = (msg, on) => new Promise(res => { const id = ++seq; cb[id] = m => { on && on(m); if (m.type === 'done' || m.type === 'result') { delete cb[id]; res(m); } }; ml.postMessage({ ...msg, id }); });
+
+// Пул воркерів: завдання роздаються вільним воркерам, прогрес оновлюється після кожного зображення
+class Pool {
+  constructor(n) { this.w = Array.from({ length: n }, () => new Worker(FURL)); }
+  run(tasks, onItem) {
+    return new Promise((res, rej) => {
+      const out = new Array(tasks.length); let next = 0, done = 0;
+      if (!tasks.length) return res(out);
+      const feed = w => {
+        if (next >= tasks.length) return;
+        const i = next++; w.onerror = e => rej(new Error(e.message));
+        w.onmessage = e => { out[i] = e.data; onItem && onItem(++done, tasks.length); done === tasks.length ? res(out) : feed(w); };
+        w.postMessage(tasks[i]);
+      };
+      this.w.forEach(feed);
+    });
+  }
+  close() { this.w.forEach(w => w.terminate()); }
+}
+
+/* ---------- лог, таймер, блокування ---------- */
+const logs = [];
+function log(m) { const s = new Date().toLocaleTimeString('uk-UA', { hour12: false }) + '.' + String(Date.now() % 1000).padStart(3, '0') + '  ' + m; logs.push(s); const l = $('logbox'); l.value += s + '\n'; l.scrollTop = l.scrollHeight; }
+let tInt;
+function startT(label) {
+  const t0 = performance.now(); $('opn').textContent = label; clearInterval(tInt);
+  tInt = setInterval(() => $('tm').textContent = ((performance.now() - t0) / 1000).toFixed(2) + ' с', 100);
+  return () => { clearInterval(tInt); const ms = performance.now() - t0; $('tm').textContent = (ms / 1000).toFixed(2) + ' с'; return ms; };
+}
+const lock = b => { document.querySelectorAll('button.act').forEach(x => x.disabled = b); $('bStop').disabled = !b; };
+const prog = (d, t) => { $('pImg').value = d / t * 100; $('tImg').textContent = `Оброблено зображень: ${d} / ${t} (${(d / t * 100).toFixed(0)}%)`; };
+function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+const sec = ms => (ms / 1000).toFixed(2) + ' с';
+
+/* ---------- Assets: групи, генерація, завантаження папки, ZIP ---------- */
+function renderGroups() {
+  const ks = Object.keys(assets).filter(k => assets[k].length);
+  $('groups').innerHTML = ks.length ? ks.map(k => `<label><input type="checkbox" data-g="${k}" ${sel.has(k) ? 'checked' : ''}> ${lbl(k)} — ${assets[k].length} зобр.</label><br>`).join('') : '<small>Набір порожній.</small>';
+  document.querySelectorAll('#groups input').forEach(c => c.onchange = () => c.checked ? sel.add(c.dataset.g) : sel.delete(c.dataset.g));
+}
+async function build() {
+  const keys = [...document.querySelectorAll('.gg:checked')].map(x => x.value), n = +$('nPer').value, nw = +$('nW').value;
+  if (!keys.length || !(n >= 5) || !(nw >= 1)) return alert('Оберіть групи, кількість зображень (≥5) і потоків (≥1).');
+  lock(true); const stop = startT('Генерація набору'), total = keys.length * 3 * n; let base = 0;
+  log(`Генерація: ${keys.length} груп × 3 образи × ${n} = ${total} зображень, потоків: ${nw}`);
+  try {
+    for (const k of keys) {
+      const tasks = [], g = GR[k], t0 = performance.now();
+      CL.forEach(c => { for (let i = 0; i < n; i++) tasks.push({ cls: c, i, w: g.w, h: g.h, type: g.t, q: g.q }); });
+      const pool = new Pool(nw), out = await pool.run(tasks, d => prog(base + d, total)); pool.close(); base += tasks.length;
+      assets[k] = out.map((o, j) => ({ cls: tasks[j].cls, f: o.f, blob: o.blob, name: `${tasks[j].cls}_${String(tasks[j].i + 1).padStart(4, '0')}.${g.e}` })); sel.add(k);
+      const ms = performance.now() - t0; log(`  ${g.n}: ${tasks.length} зобр. за ${sec(ms)} (${(ms / tasks.length).toFixed(1)} мс/зобр., ${(tasks.length / ms * 1000).toFixed(1)} зобр./с)`);
+    }
+  } catch (e) { log('ПОМИЛКА генерації: ' + e.message); }
+  const ms = stop(); log(`Генерацію завершено за ${sec(ms)}`); renderGroups(); lock(false);
+  if (confirm('Набір згенеровано. Зберегти згенеровані зображення на диск (.zip зі структурою Assets)?')) saveZip();
+}
+$('dir').onchange = async e => {
+  const fs = [...e.target.files].filter(f => f.type.startsWith('image/')), tasks = [];
+  fs.forEach(f => {
+    const p = f.webkitRelativePath.split('/'); let c = p[p.length - 2];
+    if (!CL.includes(c)) c = CL.find(x => f.name.toLowerCase().includes(x));
+    if (c) tasks.push({ file: f, cls: c, k: p[p.length - 3] || p[0], name: f.name });
+  });
+  if (!tasks.length) return alert('У папці не знайдено зображень у підпапках circle / square / triangle.');
+  lock(true); const stop = startT('Завантаження папки'); log(`Папка: знайдено ${fs.length} зображень, використано ${tasks.length}`);
+  const pool = new Pool(+$('nW').value || 2), out = await pool.run(tasks, prog); pool.close();
+  new Set(tasks.map(t => t.k)).forEach(k => assets[k] = []);
+  out.forEach((o, j) => { assets[tasks[j].k].push({ cls: tasks[j].cls, f: o.f, blob: null, name: tasks[j].name }); sel.add(tasks[j].k); });
+  log(`Папку завантажено за ${sec(stop())}`); renderGroups(); lock(false); e.target.value = '';
+};
+const CT = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = u => { let c = -1; for (let i = 0; i < u.length; i++) c = CT[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+function makeZip(files) {                       // ZIP без стиснення (store): зображення вже стиснені
+  const parts = [], cen = [], enc = new TextEncoder(); let off = 0;
+  for (const f of files) {
+    const nm = enc.encode(f.name), crc = crc32(f.data), n = f.data.length, h = new DataView(new ArrayBuffer(30)), c = new DataView(new ArrayBuffer(46));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x800, true); h.setUint16(12, 0x21, true); h.setUint32(14, crc, true); h.setUint32(18, n, true); h.setUint32(22, n, true); h.setUint16(26, nm.length, true);
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x800, true); c.setUint16(14, 0x21, true); c.setUint32(16, crc, true); c.setUint32(20, n, true); c.setUint32(24, n, true); c.setUint16(28, nm.length, true); c.setUint32(42, off, true);
+    parts.push(h, nm, f.data); cen.push(c, nm); off += 30 + nm.length + n;
+  }
+  const e = new DataView(new ArrayBuffer(22)); e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, cen.reduce((a, x) => a + x.byteLength, 0), true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...cen, e], { type: 'application/zip' });
+}
+async function saveZip() {
+  const files = [], stop = startT('Збереження ZIP');
+  for (const k of Object.keys(assets)) for (const x of assets[k]) if (x.blob) files.push({ name: `Assets/${dirName(k)}/${x.cls}/${x.name}`, data: new Uint8Array(await x.blob.arrayBuffer()) });
+  if (!files.length) { stop(); return alert('Немає згенерованих зображень для збереження.'); }
+  files.push({ name: 'log.txt', data: new TextEncoder().encode(logs.join('\n')) });
+  download(makeZip(files), 'Assets.zip'); log(`Збережено Assets.zip: ${files.length - 1} зображень за ${sec(stop())}`);
+}
+
+/* ---------- Навчання ---------- */
+function split(keys) {                          // кожне 5-те зображення кожного образу в групі — тестове (20%)
+  const tr = [], te = [];
+  keys.forEach(k => CL.forEach(c => assets[k].filter(x => x.cls === c).forEach((x, i) => (i % 5 === 4 ? te : tr).push(x))));
+  return { tr, te };
+}
+const toTrain = x => ({ input: x.f, output: { [x.cls]: 1 } }), toTest = x => ({ input: x.f, label: x.cls });
+async function onTrain() {
+  const E = +$('ep').value, lr = +$('lr').value, keys = [...sel].filter(k => assets[k] && assets[k].length);
+  if (!Number.isInteger(E) || E < 1 || E > 5000 || !(lr > 0 && lr < 1)) return alert('Епохи: ціле число 1–5000; швидкість навчання: 0 < lr < 1.');
+  if (!keys.length) return alert('Спершу згенеруйте набір або завантажте папку та позначте групи для навчання.');
+  const { tr, te } = split(keys);
+  if (tr.length + te.length < 250) log('⚠ Менше 250 зображень — результат нерепрезентативний.');
+  abort = false; lock(true); const stop = startT('Навчання');
+  log(`Навчання: групи [${keys.map(lbl).join('; ')}], train=${tr.length}, test=${te.length}, епох=${E}, lr=${lr}, нейронів=${HID}`);
+  let last = null;
+  await mlCall({ cmd: 'train', data: tr.map(toTrain), test: te.map(toTest), epochs: E, lr, hidden: HID, ck: [E] }, m => {
+    if (m.type !== 'epoch') return; last = m; $('pEp').value = m.ep / E * 100; $('tEp').textContent = `Епоха ${m.ep} / ${E}, помилка ${m.err.toFixed(5)}`;
+    if (m.ep % 10 === 0) log(`  епоха ${m.ep}/${E}: помилка ${m.err.toFixed(5)}`);
+  });
+  const ms = stop(); trained = !!last; $('bRun').disabled = !(trained && cur);
+  $('res').innerHTML = last && last.c ? `<b>Готово за ${sec(ms)}.</b> Точність на тестових (${te.length}): <b>${(last.acc * 100).toFixed(1)}%</b> (` + CL.map((c, i) => `${UA[c]} ${(last.per[i] * 100).toFixed(0)}%`).join(', ') + `); на навчальних (${tr.length}): ${(last.trAcc * 100).toFixed(1)}%`
+    : `Навчання зупинено на епосі ${last ? last.ep : 0}.`;
+  log(last && last.c ? `Навчання завершено за ${sec(ms)}; test=${(last.acc * 100).toFixed(1)}%, train=${(last.trAcc * 100).toFixed(1)}%` : `Навчання зупинено, ${sec(ms)}`); lock(false);
+}
+
+/* ---------- Експерименти ---------- */
+const avg = a => a.reduce((x, y) => x + y, 0) / a.length, sd = a => Math.sqrt(avg(a.map(x => (x - avg(a)) ** 2)));
+function showTable(head, rows) {
+  $('exp').innerHTML = '<table><tr>' + head.map(h => `<th>${h}</th>`).join('') + '</tr>' + rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('') + '</table>';
+  lastCSV = '\uFEFF' + [head, ...rows].map(r => r.join(';')).join('\n');
+}
+async function onExp() {
+  const keys = [...sel].filter(k => assets[k] && assets[k].length), eps = $('eL').value.split(',').map(Number).sort((a, b) => a - b), lrs = $('lL').value.split(',').map(Number), R = +$('rep').value;
+  if (!keys.length) return alert('Спершу створіть набір і позначте групи в розділі 1.');
+  if (eps.some(x => !(x >= 1)) || lrs.some(x => !(x > 0 && x < 1)) || !(R >= 1)) return alert('Перевірте списки епох (≥1), швидкостей (0–1, не включно) і кількість повторів.');
+  const sets = keys.map(k => [k]); if (keys.length > 1) sets.push(keys);
+  const total = sets.length * lrs.length * R, E = eps[eps.length - 1], agg = {}; let n = 0; abort = false;
+  lock(true); const stop = startT('Серія експериментів');
+  log(`Серія: наборів ${sets.length}, швидкостей ${lrs.length}, епох ${JSON.stringify(eps)}, повторів ${R} (усього ${total} навчань)`);
+  for (const s of sets) for (const lr of lrs) for (let r = 0; r < R && !abort; r++) {
+    const { tr, te } = split(s), name = s.map(lbl).join(' + ');
+    await mlCall({ cmd: 'train', data: tr.map(toTrain), test: te.map(toTest), epochs: E, lr, hidden: HID, ck: eps }, m => {
+      if (m.type !== 'epoch') return;
+      if (m.c) {
+        const key = `${name}|${lr}|${m.ep}`, o = (agg[key] ??= { name, lr, ep: m.ep, a: [], t: [], e: [], ms: [], ntr: tr.length, nte: te.length });
+        o.a.push(m.acc * 100); o.t.push(m.trAcc * 100); o.e.push(m.err); o.ms.push(m.ms);
+      }
+      $('pEp').value = (n + m.ep / E) / total * 100; $('tEp').textContent = `Експерименти: прогін ${n + 1}/${total}, епоха ${m.ep}/${E}`;
+    });
+    n++; log(`  прогін ${n}/${total} (${name}, lr=${lr}) завершено`);
+  }
+  const rows = Object.values(agg).map(o => ({ ...o, ma: avg(o.a), sa: sd(o.a), mt: avg(o.t), me: avg(o.e), mm: avg(o.ms) }));
+  showTable(['Набір', 'train/test', 'lr', 'Епох', 'Точність test, % (сер.)', 'σ', 'Точність train, %', 'Помилка', 'Час навчання, с', 'Повторів'],
+    rows.map(o => [o.name, `${o.ntr}/${o.nte}`, o.lr, o.ep, o.ma.toFixed(1), o.sa.toFixed(1), o.mt.toFixed(1), o.me.toFixed(4), (o.mm / 1000).toFixed(2), o.a.length]));
+  if (rows.length) {
+    const best = rows.reduce((a, b) => b.ma > a.ma ? b : a), fast = rows.filter(o => o.ma >= best.ma - 1).reduce((a, b) => b.mm < a.mm ? b : a);
+    const txt = `Найкращий результат: набір «${best.name}», lr=${best.lr}, ${best.ep} епох — ${best.ma.toFixed(1)}% на тестових (σ=${best.sa.toFixed(1)}, ${best.a.length} повторів), час ${(best.mm / 1000).toFixed(2)} с. ` +
+      `Найшвидша конфігурація з точністю не гірше ніж на 1 п.п.: набір «${fast.name}», lr=${fast.lr}, ${fast.ep} епох — ${fast.ma.toFixed(1)}%, ${(fast.mm / 1000).toFixed(2)} с.`;
+    $('exp').insertAdjacentHTML('beforeend', `<p><b>${txt}</b></p>`); log(txt);
+  }
+  log(`Серію завершено за ${sec(stop())}`); lock(false);
+}
+async function onPar() {
+  const keys = [...document.querySelectorAll('.gg:checked')].map(x => x.value), nb = +$('nB').value, list = $('wl').value.split(',').map(Number), R = +$('rep').value;
+  if (!keys.length || !(nb >= 3) || list.some(x => !(x >= 1))) return alert('Оберіть групи (розділ 1), кількість зображень (≥3) та список потоків.');
+  const rows = []; lock(true); const stop = startT('Бенчмарк розпаралелення'), cnt = keys.length * list.length * R; let n = 0;
+  log(`Бенчмарк розпаралелення: групи ${keys.length}, потоки ${list}, ${nb * 3} зображень на запуск, повторів ${R}`);
+  for (const k of keys) {
+    let base = 0;
+    for (const w of list) {
+      const times = [], g = GR[k], tasks = [];
+      CL.forEach(c => { for (let i = 0; i < nb; i++) tasks.push({ cls: c, w: g.w, h: g.h, type: g.t, q: g.q }); });
+      for (let r = 0; r < R; r++) { const t0 = performance.now(), p = new Pool(w); await p.run(tasks); p.close(); times.push(performance.now() - t0); prog(++n, cnt); }
+      const m = avg(times); if (!base) base = m;
+      rows.push([g.n, w, tasks.length, (m / 1000).toFixed(2), (sd(times) / 1000).toFixed(2), (tasks.length / m * 1000).toFixed(1), (base / m).toFixed(2), (base / m / (w / list[0]) * 100).toFixed(0)]);
+      log(`  ${g.n}, потоків ${w}: ${sec(m)}`);
+    }
+  }
+  showTable(['Група', 'Потоків', 'Зображень', 'Час, с (сер.)', 'σ, с', 'Зобр./с', 'Прискорення', 'Ефективність, %'], rows);
+  log(`Бенчмарк завершено за ${sec(stop())}`); lock(false);
+}
+
+/* ---------- Вхідне зображення, розпізнавання, збереження ---------- */
+let fw = null;
+const one = t => new Promise((ok, no) => { fw ??= new Worker(FURL); fw.onmessage = e => ok(e.data); fw.onerror = no; fw.postMessage(t); });
+async function setImage(blob, f, info) {
+  const bm = await createImageBitmap(blob), c = $('cIn'); c.width = bm.width; c.height = bm.height;
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(bm, 0, 0); bm.close();
+  cur = { f }; $('phIn').style.display = 'none'; c.style.display = 'block'; $('info').innerHTML = info; $('bRun').disabled = !trained;
+}
+$('file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (!f.type.startsWith('image/')) return alert('Оберіть файл-зображення (PNG, JPG, BMP тощо).');
+  try { const r = await one({ file: f }); await setImage(f, r.f, `Файл: ${f.name}<br>Тип: ${f.type}<br>Розмір файлу: ${(f.size / 1024).toFixed(1)} КБ<br>Роздільність: ${r.w}×${r.h} px<br>Пікселів: ${r.w * r.h}<br>Обробка: ${r.ms.toFixed(1)} мс`); log(`Завантажено ${f.name} (${r.w}×${r.h}), обробка ${r.ms.toFixed(1)} мс`); }
+  catch (er) { alert('Не вдалося прочитати зображення.'); }
+};
+$('bGen1').onclick = async () => {
+  const c = CL[Math.random() * 3 | 0], r = await one({ cls: c, w: 256, h: 256, type: 'image/png', q: 1 });
+  await setImage(r.blob, r.f, `Згенероване зображення (справжній образ: ${UA[c]})<br>256×256 px`);
+};
+$('bInfo').onclick = () => { const i = $('info'); if (!cur) i.textContent = 'Зображення ще не завантажено.'; i.style.display = i.style.display === 'block' ? 'none' : 'block'; };
+$('bRun').onclick = async () => {
+  if (!cur || !trained) return;
+  const t0 = performance.now(), { out } = await mlCall({ cmd: 'run', input: cur.f }), ms = performance.now() - t0;
+  let b = CL[0]; CL.forEach(c => { if (out[c] > out[b]) b = c; });
+  $('answer').textContent = 'Це: ' + UA[b];
+  $('bars').innerHTML = CL.map(c => `<div class="bar"><div style="width:${(out[c] * 100).toFixed(1)}%"></div><span>${UA[c]}: ${(out[c] * 100).toFixed(1)}%</span></div>`).join('');
+  log(`Розпізнано: ${UA[b]} (${ms.toFixed(1)} мс)`);
+};
+function canvasToBMP(c) {
+  const w = c.width, h = c.height, row = Math.ceil(w * 3 / 4) * 4, size = 54 + row * h, buf = new ArrayBuffer(size), dv = new DataView(buf);
+  dv.setUint8(0, 0x42); dv.setUint8(1, 0x4D); dv.setUint32(2, size, true); dv.setUint32(10, 54, true); dv.setUint32(14, 40, true); dv.setInt32(18, w, true); dv.setInt32(22, h, true);
+  dv.setUint16(26, 1, true); dv.setUint16(28, 24, true); dv.setUint32(34, row * h, true);
+  const d = c.getContext('2d').getImageData(0, 0, w, h).data;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const s = (y * w + x) * 4, o = 54 + (h - 1 - y) * row + x * 3; dv.setUint8(o, d[s + 2]); dv.setUint8(o + 1, d[s + 1]); dv.setUint8(o + 2, d[s]); }
+  return new Blob([buf], { type: 'image/bmp' });
+}
+$('bSave').onclick = () => {
+  if (!cur) return alert('Спочатку завантажте або згенеруйте зображення.');
+  const f = $('fmt').value, c = $('cIn');
+  f === 'bmp' ? download(canvasToBMP(c), 'image.bmp') : c.toBlob(b => download(b, 'image.' + f), f === 'jpg' ? 'image/jpeg' : 'image/png', 0.92);
+};
+
+/* ---------- Ініціалізація ---------- */
+const hc = Math.min(navigator.hardwareConcurrency || 4, 8);
+$('nW').value = hc; $('wl').value = [...new Set([1, 2, 4, hc])].filter(x => x <= hc).join(',');
+$('bGen').onclick = build; $('bTrain').onclick = onTrain; $('bExp').onclick = onExp; $('bPar').onclick = onPar; $('bZip').onclick = saveZip;
+$('bDir').onclick = () => $('dir').click(); $('bStop').onclick = () => { abort = true; ml.postMessage({ cmd: 'stop' }); log('Запит на зупинку…'); };
+$('bCsv').onclick = () => lastCSV ? download(new Blob([lastCSV], { type: 'text/csv' }), 'results.csv') : alert('Спершу виконайте експеримент.');
+$('bLog').onclick = () => download(new Blob([logs.join('\n')], { type: 'text/plain' }), 'log.txt');
+log(`Застосунок запущено. Доступно потоків: ${navigator.hardwareConcurrency || '?'}. Brain.js виконується у Web Worker.`);
+</script></body></html>
