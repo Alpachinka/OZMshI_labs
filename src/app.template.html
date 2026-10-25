@@ -2,60 +2,77 @@
 <html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Розпізнавання трьох образів — Brain.js + Web Workers</title>
 <style>
-body{font-family:system-ui,Arial,sans-serif;margin:0;background:#f4f5f7;color:#222;font-size:14px}
-header{background:#2b4c7e;color:#fff;padding:8px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-header h1{margin:0;font-size:17px} #tm{font-size:22px;font-weight:bold;margin-left:8px}
-main{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;padding:12px;max-width:1300px;margin:auto}
-section{background:#fff;border-radius:8px;padding:12px;box-shadow:0 1px 3px #0002} .wide{grid-column:1/-1}
-h2{font-size:15px;margin:0 0 8px} .row{margin:6px 0} button,select,input{font-size:13px;padding:5px 8px;margin:2px 3px 2px 0}
-input[type=number]{width:80px} progress{width:100%;height:16px} small{color:#667}
-canvas{max-width:100%;border:1px solid #ccd;background:#fff;image-rendering:pixelated}
-.ph{border:2px dashed #aab;border-radius:6px;min-height:110px;display:flex;align-items:center;justify-content:center;color:#889;text-align:center;padding:6px}
-#info{display:none;background:#eef3fb;border-radius:6px;padding:6px;font-size:12px;margin-top:6px}
-.bar{background:#e3e6ee;border-radius:4px;height:18px;margin:3px 0;position:relative}.bar>div{background:#3a7bd5;height:100%;border-radius:4px}.bar>span{position:absolute;left:6px;top:0;font-size:12px}
-table{border-collapse:collapse;font-size:12px;width:100%}td,th{border:1px solid #bbc;padding:2px 5px;text-align:right}th{background:#eef}
-#logbox{width:100%;height:160px;font:12px Consolas,monospace;box-sizing:border-box}
+:root{--bg:#f3f5f9;--card:#fff;--tx:#1d2433;--mut:#667085;--ac:#2f6fed;--bd:#dde3ee;--bar:#e6ebf4;--hl:#eef3ff}
+@media(prefers-color-scheme:dark){:root{--bg:#10141c;--card:#1a2130;--tx:#e8ecf4;--mut:#9aa6bd;--ac:#6b97ff;--bd:#2c3649;--bar:#26304a;--hl:#212b45}}
+*{box-sizing:border-box}
+body{font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;margin:0;background:var(--bg);color:var(--tx);padding-bottom:env(safe-area-inset-bottom)}
+header{position:sticky;top:0;z-index:5;background:linear-gradient(135deg,#1f3b73,#2f6fed);color:#fff;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));display:flex;justify-content:space-between;align-items:center;gap:6px 16px;flex-wrap:wrap}
+header h1{margin:0;font-size:17px} #tm{font-size:21px;font-weight:700;margin-left:6px;font-variant-numeric:tabular-nums}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px;padding:14px;max-width:1300px;margin:auto}
+section{background:var(--card);border:1px solid var(--bd);border-top:3px solid var(--ac);border-radius:12px;padding:14px;box-shadow:0 2px 8px #0000000d;min-width:0}
+section.drag{outline:3px dashed var(--ac)} .wide{grid-column:1/-1}
+h2{font-size:16px;margin:0 0 10px} .row{margin:8px 0} small{color:var(--mut)} label{font-size:14px}
+button,select,input,textarea{font:inherit;color:var(--tx)}
+button{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:9px 14px;min-height:42px;margin:3px 6px 3px 0;cursor:pointer;font-size:14px;font-weight:600}
+button:hover:not(:disabled){filter:brightness(1.1)} button:disabled{opacity:.45;cursor:not-allowed}
+#bDir,#bZip,#bInfo,#bSave,#bStop,#bCsv,#bLog,#bGen1,#bCam,#bMSave,#bMLoad{background:transparent;color:var(--ac);border:1.5px solid var(--ac)}
+input,select{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;min-height:40px;font-size:16px;margin:2px 4px 2px 0;max-width:100%}
+input[type=number]{width:96px} input[type=text]{width:140px} input[type=file]{font-size:14px;width:100%}
+progress{width:100%;height:14px;accent-color:var(--ac)}
+canvas{max-width:100%;border:1px solid var(--bd);background:#fff;border-radius:8px;image-rendering:pixelated}
+#chart{width:100%;height:auto;image-rendering:auto;background:var(--card)}
+.ph{border:2px dashed var(--bd);border-radius:10px;min-height:110px;display:flex;align-items:center;justify-content:center;color:var(--mut);text-align:center;padding:8px}
+#info{display:none;background:var(--hl);border-radius:8px;padding:8px;font-size:13px;margin-top:6px}
+.bar{background:var(--bar);border-radius:6px;height:22px;margin:4px 0;position:relative;overflow:hidden}.bar>div{background:var(--ac);height:100%}.bar>span{position:absolute;left:8px;top:2px;font-size:13px;color:var(--tx);mix-blend-mode:normal}
+#exp{overflow-x:auto} table{border-collapse:collapse;font-size:12px;width:100%;min-width:640px}td,th{border:1px solid var(--bd);padding:4px 6px;text-align:right}th{background:var(--hl)}
+#logbox{width:100%;height:170px;font:12px Consolas,monospace;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px}
+#samples{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px} #samples figure{margin:0;text-align:center;font-size:12px;color:var(--mut)} #samples canvas{width:64px;height:64px}
+#toast{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translate(-50%,20px);background:#1d2433;color:#fff;padding:10px 14px;border-radius:10px;max-width:92vw;opacity:0;pointer-events:none;transition:.25s;z-index:20;box-shadow:0 4px 16px #0005}
+#toast.on{opacity:1;pointer-events:auto;transform:translate(-50%,0)} #toast button{margin:0 0 0 10px;min-height:34px;padding:4px 10px;background:#fff;color:#1d2433}
+@media(max-width:640px){header h1{font-size:14px} main{padding:8px;gap:10px} section{padding:12px} section button{width:100%;margin:4px 0} input[type=number],input[type=text]{width:46%} #tm{font-size:18px}}
 </style></head><body>
 <header><h1>Розпізнавання образів (коло / квадрат / трикутник): Brain.js + Web Workers</h1>
 <div>⏱ <span id="opn">очікування</span>: <span id="tm">0.00 с</span></div></header>
 <main>
 
 <section><h2>1. Набір даних (Assets)</h2>
- <div class="row"><label for="nPer">Зображень на кожен образ у групі:</label> <input type="number" id="nPer" value="100" min="10" max="1000"></div>
+ <div class="row"><label for="nPer">Зображень на кожен образ у групі:</label> <input type="number" id="nPer" title="Скільки зображень створити для кожного образу в кожній групі (10–1000)" value="100" min="10" max="1000"></div>
  <div class="row">Групи для генерації:<br>
   <label><input type="checkbox" class="gg" value="icons" checked> Іконки 32×32 (PNG)</label><br>
   <label><input type="checkbox" class="gg" value="medium" checked> Середні 256×256 (JPG, якість 0.8)</label><br>
   <label><input type="checkbox" class="gg" value="hq" checked> Якісні 4K 3840×2160 (JPG, якість 0.92)</label></div>
- <div class="row"><label for="nW">Потоків (Web Workers):</label> <input type="number" id="nW" min="1" max="16"></div>
+ <div class="row"><label for="nW">Потоків (Web Workers):</label> <input type="number" id="nW" title="Кількість паралельних воркерів; зазвичай = кількість ядер процесора" min="1" max="16"></div>
  <button class="act" id="bGen">Згенерувати набір</button><button class="act" id="bDir">Завантажити папку…</button><input type="file" id="dir" webkitdirectory multiple hidden><button id="bZip">Зберегти набір (.zip)</button>
  <div class="row"><b>Групи в Assets</b> (позначте, на яких вчити):<div id="groups"><small>Набір порожній. Згенеруйте його або завантажте папку.</small></div></div>
+ <div class="row" id="samplesWrap"><small>Зразки вибраної групи (так бачить мережа, 16×16):</small><div id="samples"></div></div>
  <progress id="pImg" value="0" max="100"></progress><div id="tImg"><small>Оброблено зображень: 0%</small></div>
 </section>
 
 <section><h2>2. Навчання нейромережі</h2>
- <div class="row"><label for="ep">Кількість епох:</label> <input type="number" id="ep" value="100" min="1" max="5000"></div>
- <div class="row"><label for="lr">Швидкість навчання:</label> <input type="number" id="lr" value="0.3" min="0.001" max="0.99" step="0.01"></div>
- <button class="act" id="bTrain">Навчити мережу</button><button id="bStop" disabled>Зупинити</button>
+ <div class="row"><label for="ep">Кількість епох:</label> <input type="number" id="ep" title="Скільки разів мережа проходить по всіх навчальних зображеннях (1–5000). Більше — точніше, але довше" value="100" min="1" max="5000"></div>
+ <div class="row"><label for="lr">Швидкість навчання:</label> <input type="number" id="lr" title="Розмір кроку корекції ваг, 0 < lr < 1. Малий — повільно, великий — нестабільно" value="0.3" min="0.001" max="0.99" step="0.01"></div>
+ <button class="act" id="bTrain">Навчити мережу</button><button id="bStop" disabled>Зупинити</button><button id="bMSave">Зберегти модель</button><button id="bMLoad">Завантажити модель</button><input type="file" id="mfile" accept=".json,application/json" hidden>
  <progress id="pEp" value="0" max="100"></progress><div id="tEp"><small>Епоха: 0 / 0</small></div>
+ <canvas id="chart" width="640" height="140" title="Помилка навчання по епохах"></canvas>
  <div class="row" id="res">Мережу ще не навчено.</div>
 </section>
 
 <section><h2>3. Розпізнавання</h2>
- <div class="row"><label for="file">Файл зображення:</label><br><input type="file" id="file" accept="image/*"></div>
+ <div class="row"><label for="file">Файл зображення:</label><br><input type="file" id="file" accept="image/*"> <button type="button" id="bCam">📷 Камера</button><input type="file" id="cam" accept="image/*" capture="environment" hidden></div>
  <button id="bGen1">Випадкова фігура</button><button id="bInfo">ℹ Інфо</button><button id="bRun" disabled>Розпізнати образ</button>
  <div id="info"></div>
- <div class="ph" id="phIn">Тут буде вхідне зображення</div><canvas id="cIn" width="256" height="256" style="display:none"></canvas>
+ <div class="ph" id="phIn">Тут буде вхідне зображення (можна перетягнути файл сюди)</div><canvas id="cIn" width="256" height="256" style="display:none"></canvas>
  <div class="row"><label for="fmt">Формат:</label> <select id="fmt"><option value="png">PNG</option><option value="jpg">JPG</option><option value="bmp">BMP</option></select><button id="bSave">Зберегти зображення</button></div>
  <div id="answer" style="font-size:18px;font-weight:bold">—</div><div id="bars"></div>
 </section>
 
 <section class="wide"><h2>4. Експерименти та бенчмарки</h2>
- <div class="row"><label for="eL">Епохи (через кому):</label> <input type="text" id="eL" value="10,30,100,200" style="width:150px">
-  <label for="lL">Швидкості навчання:</label> <input type="text" id="lL" value="0.05,0.2,0.5" style="width:130px">
-  <label for="rep">Повторів:</label> <input type="number" id="rep" value="3" min="1" max="10">
+ <div class="row"><label for="eL">Епохи (через кому):</label> <input type="text" id="eL" title="Епохи, на яких фіксується точність (через кому)" value="10,30,100,200" style="width:150px">
+  <label for="lL">Швидкості навчання:</label> <input type="text" id="lL" title="Значення швидкості навчання для перебору (через кому)" value="0.05,0.2,0.5" style="width:130px">
+  <label for="rep">Повторів:</label> <input type="number" id="rep" title="Скільки разів повторити кожну конфігурацію для усереднення" value="3" min="1" max="10">
   <button class="act" id="bExp">Серія: набір × швидкість × епохи</button></div>
- <div class="row"><label for="wl">Потоки (через кому):</label> <input type="text" id="wl" style="width:110px">
-  <label for="nB">Зображень на образ:</label> <input type="number" id="nB" value="20" min="3">
+ <div class="row"><label for="wl">Потоки (через кому):</label> <input type="text" id="wl" title="Кількості потоків для порівняння (через кому)" style="width:110px">
+  <label for="nB">Зображень на образ:</label> <input type="number" id="nB" title="Зображень на образ у бенчмарку розпаралелення" value="20" min="3">
   <button class="act" id="bPar">Бенчмарк розпаралелення</button><button id="bCsv">Зберегти таблицю (CSV)</button></div>
  <div id="exp"><small>Результати з'являться тут. Для серії експериментів позначте групи в розділі 1.</small></div>
 </section>
@@ -64,6 +81,7 @@ table{border-collapse:collapse;font-size:12px;width:100%}td,th{border:1px solid 
  <textarea id="logbox" readonly></textarea><button id="bLog">Зберегти лог (.txt)</button></section>
 </main>
 
+<div id="toast" role="status"></div>
 <!--BRAIN-->
 <script>
 const $ = id => document.getElementById(id);
@@ -131,6 +149,8 @@ function mlWorker() {
     const m = e.data;
     if (m.cmd === 'stop') { stop = true; return; }
     if (m.cmd === 'run') { postMessage({ id: m.id, type: 'result', out: net.run(m.input) }); return; }
+    if (m.cmd === 'export') { postMessage({ id: m.id, type: 'result', json: net.toJSON() }); return; }
+    if (m.cmd === 'import') { try { net = new brain.NeuralNetwork().fromJSON(m.json); postMessage({ id: m.id, type: 'result' }); } catch (er) { postMessage({ id: m.id, type: 'result', err: 1 }); } return; }
     stop = false; net = new brain.NeuralNetwork({ hiddenLayers: [m.hidden] });
     let tt = 0, ep = 0;
     for (ep = 1; ep <= m.epochs && !stop; ep++) {
@@ -194,11 +214,12 @@ const sec = ms => (ms / 1000).toFixed(2) + ' с';
 function renderGroups() {
   const ks = Object.keys(assets).filter(k => assets[k].length);
   $('groups').innerHTML = ks.length ? ks.map(k => `<label><input type="checkbox" data-g="${k}" ${sel.has(k) ? 'checked' : ''}> ${lbl(k)} — ${assets[k].length} зобр.</label><br>`).join('') : '<small>Набір порожній.</small>';
-  document.querySelectorAll('#groups input').forEach(c => c.onchange = () => c.checked ? sel.add(c.dataset.g) : sel.delete(c.dataset.g));
+  document.querySelectorAll('#groups input').forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.g) : sel.delete(c.dataset.g); showSamples(); });
+  showSamples();
 }
 async function build() {
   const keys = [...document.querySelectorAll('.gg:checked')].map(x => x.value), n = +$('nPer').value, nw = +$('nW').value;
-  if (!keys.length || !(n >= 5) || !(nw >= 1)) return alert('Оберіть групи, кількість зображень (≥5) і потоків (≥1).');
+  if (!keys.length || !(n >= 5) || !(nw >= 1)) return toast('Оберіть групи, кількість зображень (≥5) і потоків (≥1).');
   lock(true); const stop = startT('Генерація набору'), total = keys.length * 3 * n; let base = 0;
   log(`Генерація: ${keys.length} груп × 3 образи × ${n} = ${total} зображень, потоків: ${nw}`);
   try {
@@ -211,7 +232,7 @@ async function build() {
     }
   } catch (e) { log('ПОМИЛКА генерації: ' + e.message); }
   const ms = stop(); log(`Генерацію завершено за ${sec(ms)}`); renderGroups(); lock(false);
-  if (confirm('Набір згенеровано. Зберегти згенеровані зображення на диск (.zip зі структурою Assets)?')) saveZip();
+  toast('Набір згенеровано. Зберегти згенеровані зображення на диск (.zip)?', { t: 'Зберегти .zip', f: saveZip });
 }
 $('dir').onchange = async e => {
   const fs = [...e.target.files].filter(f => f.type.startsWith('image/')), tasks = [];
@@ -220,7 +241,7 @@ $('dir').onchange = async e => {
     if (!CL.includes(c)) c = CL.find(x => f.name.toLowerCase().includes(x));
     if (c) tasks.push({ file: f, cls: c, k: p[p.length - 3] || p[0], name: f.name });
   });
-  if (!tasks.length) return alert('У папці не знайдено зображень у підпапках circle / square / triangle.');
+  if (!tasks.length) return toast('У папці не знайдено зображень у підпапках circle / square / triangle.');
   lock(true); const stop = startT('Завантаження папки'); log(`Папка: знайдено ${fs.length} зображень, використано ${tasks.length}`);
   const pool = new Pool(+$('nW').value || 2), out = await pool.run(tasks, prog); pool.close();
   new Set(tasks.map(t => t.k)).forEach(k => assets[k] = []);
@@ -244,7 +265,7 @@ function makeZip(files) {                       // ZIP без стиснення
 async function saveZip() {
   const files = [], stop = startT('Збереження ZIP');
   for (const k of Object.keys(assets)) for (const x of assets[k]) if (x.blob) files.push({ name: `Assets/${dirName(k)}/${x.cls}/${x.name}`, data: new Uint8Array(await x.blob.arrayBuffer()) });
-  if (!files.length) { stop(); return alert('Немає згенерованих зображень для збереження.'); }
+  if (!files.length) { stop(); return toast('Немає згенерованих зображень для збереження.'); }
   files.push({ name: 'log.txt', data: new TextEncoder().encode(logs.join('\n')) });
   download(makeZip(files), 'Assets.zip'); log(`Збережено Assets.zip: ${files.length - 1} зображень за ${sec(stop())}`);
 }
@@ -258,15 +279,15 @@ function split(keys) {                          // кожне 5-те зобра�
 const toTrain = x => ({ input: x.f, output: { [x.cls]: 1 } }), toTest = x => ({ input: x.f, label: x.cls });
 async function onTrain() {
   const E = +$('ep').value, lr = +$('lr').value, keys = [...sel].filter(k => assets[k] && assets[k].length);
-  if (!Number.isInteger(E) || E < 1 || E > 5000 || !(lr > 0 && lr < 1)) return alert('Епохи: ціле число 1–5000; швидкість навчання: 0 < lr < 1.');
-  if (!keys.length) return alert('Спершу згенеруйте набір або завантажте папку та позначте групи для навчання.');
+  if (!Number.isInteger(E) || E < 1 || E > 5000 || !(lr > 0 && lr < 1)) return toast('Епохи: ціле число 1–5000; швидкість навчання: 0 < lr < 1.');
+  if (!keys.length) return toast('Спершу згенеруйте набір або завантажте папку та позначте групи для навчання.');
   const { tr, te } = split(keys);
   if (tr.length + te.length < 250) log('⚠ Менше 250 зображень — результат нерепрезентативний.');
-  abort = false; lock(true); const stop = startT('Навчання');
+  errs.length = 0; abort = false; lock(true); const stop = startT('Навчання');
   log(`Навчання: групи [${keys.map(lbl).join('; ')}], train=${tr.length}, test=${te.length}, епох=${E}, lr=${lr}, нейронів=${HID}`);
   let last = null;
   await mlCall({ cmd: 'train', data: tr.map(toTrain), test: te.map(toTest), epochs: E, lr, hidden: HID, ck: [E] }, m => {
-    if (m.type !== 'epoch') return; last = m; $('pEp').value = m.ep / E * 100; $('tEp').textContent = `Епоха ${m.ep} / ${E}, помилка ${m.err.toFixed(5)}`;
+    if (m.type !== 'epoch') return; last = m; errs.push(m.err); if (m.ep % 2 === 0 || m.ep === E) drawChart(); $('pEp').value = m.ep / E * 100; $('tEp').textContent = `Епоха ${m.ep} / ${E}, помилка ${m.err.toFixed(5)}`;
     if (m.ep % 10 === 0) log(`  епоха ${m.ep}/${E}: помилка ${m.err.toFixed(5)}`);
   });
   const ms = stop(); trained = !!last; $('bRun').disabled = !(trained && cur);
@@ -283,8 +304,8 @@ function showTable(head, rows) {
 }
 async function onExp() {
   const keys = [...sel].filter(k => assets[k] && assets[k].length), eps = $('eL').value.split(',').map(Number).sort((a, b) => a - b), lrs = $('lL').value.split(',').map(Number), R = +$('rep').value;
-  if (!keys.length) return alert('Спершу створіть набір і позначте групи в розділі 1.');
-  if (eps.some(x => !(x >= 1)) || lrs.some(x => !(x > 0 && x < 1)) || !(R >= 1)) return alert('Перевірте списки епох (≥1), швидкостей (0–1, не включно) і кількість повторів.');
+  if (!keys.length) return toast('Спершу створіть набір і позначте групи в розділі 1.');
+  if (eps.some(x => !(x >= 1)) || lrs.some(x => !(x > 0 && x < 1)) || !(R >= 1)) return toast('Перевірте списки епох (≥1), швидкостей (0–1, не включно) і кількість повторів.');
   const sets = keys.map(k => [k]); if (keys.length > 1) sets.push(keys);
   const total = sets.length * lrs.length * R, E = eps[eps.length - 1], agg = {}; let n = 0; abort = false;
   lock(true); const stop = startT('Серія експериментів');
@@ -314,7 +335,7 @@ async function onExp() {
 }
 async function onPar() {
   const keys = [...document.querySelectorAll('.gg:checked')].map(x => x.value), nb = +$('nB').value, list = $('wl').value.split(',').map(Number), R = +$('rep').value;
-  if (!keys.length || !(nb >= 3) || list.some(x => !(x >= 1))) return alert('Оберіть групи (розділ 1), кількість зображень (≥3) та список потоків.');
+  if (!keys.length || !(nb >= 3) || list.some(x => !(x >= 1))) return toast('Оберіть групи (розділ 1), кількість зображень (≥3) та список потоків.');
   const rows = []; lock(true); const stop = startT('Бенчмарк розпаралелення'), cnt = keys.length * list.length * R; let n = 0;
   log(`Бенчмарк розпаралелення: групи ${keys.length}, потоки ${list}, ${nb * 3} зображень на запуск, повторів ${R}`);
   for (const k of keys) {
@@ -340,11 +361,11 @@ async function setImage(blob, f, info) {
   const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(bm, 0, 0); bm.close();
   cur = { f }; $('phIn').style.display = 'none'; c.style.display = 'block'; $('info').innerHTML = info; $('bRun').disabled = !trained;
 }
-$('file').onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
-  if (!f.type.startsWith('image/')) return alert('Оберіть файл-зображення (PNG, JPG, BMP тощо).');
+const loadFile = async f => {
+  if (!f) return;
+  if (!f.type.startsWith('image/')) return toast('Оберіть файл-зображення (PNG, JPG, BMP тощо).');
   try { const r = await one({ file: f }); await setImage(f, r.f, `Файл: ${f.name}<br>Тип: ${f.type}<br>Розмір файлу: ${(f.size / 1024).toFixed(1)} КБ<br>Роздільність: ${r.w}×${r.h} px<br>Пікселів: ${r.w * r.h}<br>Обробка: ${r.ms.toFixed(1)} мс`); log(`Завантажено ${f.name} (${r.w}×${r.h}), обробка ${r.ms.toFixed(1)} мс`); }
-  catch (er) { alert('Не вдалося прочитати зображення.'); }
+  catch (er) { toast('Не вдалося прочитати зображення.'); }
 };
 $('bGen1').onclick = async () => {
   const c = CL[Math.random() * 3 | 0], r = await one({ cls: c, w: 256, h: 256, type: 'image/png', q: 1 });
@@ -355,8 +376,9 @@ $('bRun').onclick = async () => {
   if (!cur || !trained) return;
   const t0 = performance.now(), { out } = await mlCall({ cmd: 'run', input: cur.f }), ms = performance.now() - t0;
   let b = CL[0]; CL.forEach(c => { if (out[c] > out[b]) b = c; });
+  const sum = CL.reduce((a, c) => a + out[c], 0) || 1;   // нормуємо оцінки: сума = 100 %
   $('answer').textContent = 'Це: ' + UA[b];
-  $('bars').innerHTML = CL.map(c => `<div class="bar"><div style="width:${(out[c] * 100).toFixed(1)}%"></div><span>${UA[c]}: ${(out[c] * 100).toFixed(1)}%</span></div>`).join('');
+  $('bars').innerHTML = CL.map(c => `<div class="bar"><div style="width:${(out[c] / sum * 100).toFixed(1)}%"></div><span>${UA[c]}: ${(out[c] / sum * 100).toFixed(1)}%</span></div>`).join('');
   log(`Розпізнано: ${UA[b]} (${ms.toFixed(1)} мс)`);
 };
 function canvasToBMP(c) {
@@ -368,7 +390,7 @@ function canvasToBMP(c) {
   return new Blob([buf], { type: 'image/bmp' });
 }
 $('bSave').onclick = () => {
-  if (!cur) return alert('Спочатку завантажте або згенеруйте зображення.');
+  if (!cur) return toast('Спочатку завантажте або згенеруйте зображення.');
   const f = $('fmt').value, c = $('cIn');
   f === 'bmp' ? download(canvasToBMP(c), 'image.bmp') : c.toBlob(b => download(b, 'image.' + f), f === 'jpg' ? 'image/jpeg' : 'image/png', 0.92);
 };
@@ -378,7 +400,49 @@ const hc = Math.min(navigator.hardwareConcurrency || 4, 8);
 $('nW').value = hc; $('wl').value = [...new Set([1, 2, 4, hc])].filter(x => x <= hc).join(',');
 $('bGen').onclick = build; $('bTrain').onclick = onTrain; $('bExp').onclick = onExp; $('bPar').onclick = onPar; $('bZip').onclick = saveZip;
 $('bDir').onclick = () => $('dir').click(); $('bStop').onclick = () => { abort = true; ml.postMessage({ cmd: 'stop' }); log('Запит на зупинку…'); };
-$('bCsv').onclick = () => lastCSV ? download(new Blob([lastCSV], { type: 'text/csv' }), 'results.csv') : alert('Спершу виконайте експеримент.');
+$('bCsv').onclick = () => lastCSV ? download(new Blob([lastCSV], { type: 'text/csv' }), 'results.csv') : toast('Спершу виконайте експеримент.');
 $('bLog').onclick = () => download(new Blob([logs.join('\n')], { type: 'text/plain' }), 'log.txt');
+/* ---------- Повідомлення, графік, зразки, модель, перетягування, камера ---------- */
+function toast(msg, act) {
+  const t = $('toast'); t.textContent = msg; clearTimeout(toast.id);
+  if (act) { const b = document.createElement('button'); b.textContent = act.t; b.onclick = () => { t.classList.remove('on'); act.f(); }; t.append(b); }
+  else toast.id = setTimeout(() => t.classList.remove('on'), 5000);
+  t.classList.add('on'); log('Повідомлення: ' + msg);
+}
+const errs = [];
+function drawChart() {
+  const c = $('chart'), x = c.getContext('2d'), w = c.width, h = c.height; x.clearRect(0, 0, w, h);
+  if (errs.length < 2) return;
+  const mx = Math.max(...errs); x.strokeStyle = '#2f6fed'; x.lineWidth = 2; x.beginPath();
+  errs.forEach((v, i) => { const px = 6 + i / (errs.length - 1) * (w - 12), py = h - 8 - v / mx * (h - 28); i ? x.lineTo(px, py) : x.moveTo(px, py); }); x.stroke();
+  x.fillStyle = getComputedStyle(document.body).color; x.font = '13px sans-serif'; x.fillText(`помилка навчання по епохах: ${errs[errs.length - 1].toFixed(4)} (макс. ${mx.toFixed(3)})`, 8, 14);
+}
+function showSamples() {
+  const k = [...sel].find(g => assets[g] && assets[g].length), box = $('samples'); box.innerHTML = ''; if (!k) return;
+  CL.forEach(c => {
+    const it = assets[k].find(x => x.cls === c); if (!it) return;
+    const fig = document.createElement('figure'), cv = document.createElement('canvas'), id = new ImageData(16, 16); cv.width = cv.height = 16;
+    it.f.forEach((v, i) => { const g = 255 * (1 - v); id.data.set([g, g, g, 255], i * 4); });
+    cv.getContext('2d').putImageData(id, 0, 0); fig.append(cv, UA[c]); box.append(fig);
+  });
+}
+$('file').onchange = e => loadFile(e.target.files[0]);
+$('bCam').onclick = () => $('cam').click(); $('cam').onchange = e => loadFile(e.target.files[0]);
+const dz = $('cIn').closest('section');
+['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
+dz.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+$('bMSave').onclick = async () => {
+  if (!trained) return toast('Спершу навчіть або завантажте модель.');
+  const r = await mlCall({ cmd: 'export' }); download(new Blob([JSON.stringify(r.json)], { type: 'application/json' }), 'model.json'); log('Модель збережено (model.json)');
+};
+$('bMLoad').onclick = () => $('mfile').click();
+$('mfile').onchange = async e => {
+  try { const r = await mlCall({ cmd: 'import', json: JSON.parse(await e.target.files[0].text()) }); if (r.err) throw 0;
+    trained = true; $('bRun').disabled = !cur; $('res').textContent = 'Модель завантажено з файла.'; log('Модель завантажено'); toast('Модель завантажено.'); }
+  catch (er) { toast('Не вдалося завантажити модель: некоректний файл.'); }
+  e.target.value = '';
+};
+
 log(`Застосунок запущено. Доступно потоків: ${navigator.hardwareConcurrency || '?'}. Brain.js виконується у Web Worker.`);
 </script></body></html>
