@@ -60,6 +60,9 @@ canvas{max-width:100%;border:1px solid var(--bd);background:#fff;border-radius:8
 <section><h2>3. Розпізнавання</h2>
  <div class="row"><label for="file">Файл зображення:</label><br><input type="file" id="file" accept="image/*"> <button type="button" id="bCam">📷 Камера</button><input type="file" id="cam" accept="image/*" capture="environment" hidden></div>
  <button id="bGen1">Випадкова фігура</button><button id="bInfo">ℹ Інфо</button><button id="bRun" disabled>Розпізнати образ</button>
+ <div id="camBox" style="display:none"><video id="vid" autoplay playsinline muted style="width:100%;border-radius:10px;background:#000"></video>
+  <small>Покажіть темну фігуру на світлому аркуші так, щоб вона займала більшу частину кадру.</small>
+  <div class="row"><button id="bSnap">Зняти і розпізнати</button><label><input type="checkbox" id="live"> Розпізнавати наживо</label> <button id="bCamOff">Закрити камеру</button></div></div>
  <div id="info"></div>
  <div class="ph" id="phIn">Тут буде вхідне зображення (можна перетягнути файл сюди)</div><canvas id="cIn" width="256" height="256" style="display:none"></canvas>
  <div class="row"><label for="fmt">Формат:</label> <select id="fmt"><option value="png">PNG</option><option value="jpg">JPG</option><option value="bmp">BMP</option></select><button id="bSave">Зберегти зображення</button></div>
@@ -104,17 +107,20 @@ function featWorker() {
     wc.fillStyle = '#fff'; wc.fillRect(0, 0, K, K);
     const k = Math.min(K / src.width, K / src.height), w = src.width * k, h = src.height * k;
     wc.drawImage(src, (K - w) / 2, (K - h) / 2, w, h);
-    const d = wc.getImageData(0, 0, K, K).data; let x0 = K, x1 = -1, y0 = K, y1 = -1;
-    for (let y = 0; y < K; y++) for (let x = 0; x < K; x++) {
-      const i = (y * K + x) * 4;
-      if (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < 128) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-    }
+    const ox = Math.floor((K - w) / 2), oy = Math.floor((K - h) / 2), ex = Math.min(K, Math.ceil(ox + w)), ey = Math.min(K, Math.ceil(oy + h));
+    const d = wc.getImageData(0, 0, K, K).data, lum = (x, y) => { const i = (y * K + x) * 4; return 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; };
+    let lo = 255, hi = 0;
+    for (let y = oy; y < ey; y++) for (let x = ox; x < ex; x++) { const v = lum(x, y); if (v < lo) lo = v; if (v > hi) hi = v; }
+    const thr = hi - lo < 40 ? -1 : (lo + hi) / 2, rng = Math.max(hi - lo, 40);   // адаптивний поріг і контраст (камера, різне освітлення)
+    let x0 = K, x1 = -1, y0 = K, y1 = -1;
+    for (let y = oy; y < ey; y++) for (let x = ox; x < ex; x++)
+      if (lum(x, y) < thr) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     if (x1 < 0) { x0 = 0; y0 = 0; x1 = K - 1; y1 = K - 1; }
     const bw = x1 - x0 + 1, bh = y1 - y0 + 1, sc = (S - 2) / Math.max(bw, bh);
     c16.fillStyle = '#fff'; c16.fillRect(0, 0, S, S);
     c16.drawImage(wk, x0, y0, bw, bh, (S - bw * sc) / 2, (S - bh * sc) / 2, bw * sc, bh * sc);
     const g = c16.getImageData(0, 0, S, S).data, f = [];
-    for (let i = 0; i < g.length; i += 4) f.push(1 - (0.299 * g[i] + 0.587 * g[i + 1] + 0.114 * g[i + 2]) / 255);
+    for (let i = 0; i < g.length; i += 4) f.push(Math.min(1, Math.max(0, (hi - (0.299 * g[i] + 0.587 * g[i + 1] + 0.114 * g[i + 2])) / rng)));
     return f;
   }
   // малює випадкову фігуру потрібного розміру
@@ -379,7 +385,7 @@ $('bRun').onclick = async () => {
   const sum = CL.reduce((a, c) => a + out[c], 0) || 1;   // нормуємо оцінки: сума = 100 %
   $('answer').textContent = 'Це: ' + UA[b];
   $('bars').innerHTML = CL.map(c => `<div class="bar"><div style="width:${(out[c] / sum * 100).toFixed(1)}%"></div><span>${UA[c]}: ${(out[c] / sum * 100).toFixed(1)}%</span></div>`).join('');
-  log(`Розпізнано: ${UA[b]} (${ms.toFixed(1)} мс)`);
+  if (!quiet) log(`Розпізнано: ${UA[b]} (${ms.toFixed(1)} мс)`);
 };
 function canvasToBMP(c) {
   const w = c.width, h = c.height, row = Math.ceil(w * 3 / 4) * 4, size = 54 + row * h, buf = new ArrayBuffer(size), dv = new DataView(buf);
@@ -427,7 +433,7 @@ function showSamples() {
   });
 }
 $('file').onchange = e => loadFile(e.target.files[0]);
-$('bCam').onclick = () => $('cam').click(); $('cam').onchange = e => loadFile(e.target.files[0]);
+$('bCam').onclick = camOn; $('cam').onchange = e => loadFile(e.target.files[0]);
 const dz = $('cIn').closest('section');
 ['dragover', 'dragenter'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('drag'); }));
 ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('drag'); }));
@@ -444,5 +450,31 @@ $('mfile').onchange = async e => {
   e.target.value = '';
 };
 
+/* ---------- Вебкамера (ноутбук і телефон) ---------- */
+let stream = null, liveT = null, quiet = false, camBusy = false;
+async function camOn() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return $('cam').click();   // резерв: системна камера телефона
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });   // запит дозволу у браузера
+    $('vid').srcObject = stream; $('camBox').style.display = 'block'; log('Камеру увімкнено');
+  } catch (e) { toast(e.name === 'NotAllowedError' ? 'Доступ до камери заборонено: дозвольте його в браузері (значок камери в адресному рядку).' : 'Камеру не знайдено або вона зайнята. Можна завантажити файл.'); }
+}
+function camOff() {
+  clearInterval(liveT); $('live').checked = false; quiet = false;
+  if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; $('camBox').style.display = 'none'; log('Камеру вимкнено');
+}
+async function snap() {
+  const v = $('vid'); if (!v.videoWidth) return;
+  const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
+  const blob = await new Promise(r => c.toBlob(r, 'image/png')), r = await one({ file: blob });
+  await setImage(blob, r.f, `Кадр з камери: ${c.width}×${c.height} px<br>Обробка: ${r.ms.toFixed(1)} мс`);
+  trained ? $('bRun').click() : toast('Спершу навчіть мережу або завантажте модель.');
+}
+$('bSnap').onclick = snap; $('bCamOff').onclick = camOff;
+$('live').onchange = () => {
+  clearInterval(liveT); quiet = $('live').checked; if (!quiet) return;
+  if (!trained) { toast('Спершу навчіть мережу або завантажте модель.'); $('live').checked = false; quiet = false; return; }
+  liveT = setInterval(async () => { if (camBusy) return; camBusy = true; try { await snap(); } finally { camBusy = false; } }, 800);
+};
 log(`Застосунок запущено. Доступно потоків: ${navigator.hardwareConcurrency || '?'}. Brain.js виконується у Web Worker.`);
 </script></body></html>
